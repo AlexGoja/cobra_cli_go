@@ -160,6 +160,11 @@ func createPemFile(rsa *string) {
 		fmt.Printf("Could not write to file %s \n", FILE)
 	}
 
+	err = os.Chmod(FILE, 0400)
+	if err != nil {
+		fmt.Printf("Could not set permission on file %s \n", err)
+	}
+
 	w.Flush()
 
 }
