@@ -1,0 +1,329 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Distributed File System.
+
+Parameters:
+  InstanceType:
+    ConstraintDescription: must be a valid EC2 instance type.
+    Default: t2.micro
+    Description: EC2 instance type
+    Type: String
+
+  KeyName:
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+  Subnets:
+    Type: CommaDelimitedList
+    Description: 'The list of SubnetIds, for at least two Availability Zones in the
+      region in your Virtual Private Cloud (VPC)'
+
+  VPC:
+    Description: VPC ID for EC2 and Elastic Load Balancer
+    Type: AWS::EC2::VPC::Id
+
+  ImageId:
+    Description: AMI ID for EC2 nodes
+    Type: String
+
+Resources:
+
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      PerformanceMode: generalPurpose
+
+  EFSMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId:
+        Ref: EFSFileSystem
+      SecurityGroups:
+        - Fn::GetAtt:
+            - EFSSecurityGroup
+            - GroupId
+      SubnetId:
+        Fn::Select:
+          - 0
+          - Ref: Subnets
+
+  EFSMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId:
+        Ref: EFSFileSystem
+      SecurityGroups:
+        - Fn::GetAtt:
+            - EFSSecurityGroup
+            - GroupId
+      SubnetId:
+        Fn::Select:
+          - 1
+          - Ref: Subnets
+
+  CPUAlarmHigh:
+    Properties:
+      AlarmActions:
+        - Ref: ScaleUpPolicy
+      AlarmDescription: Scale-up if CPU > 90% for 10 minutes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value:
+            Ref: AutoScalingGroup
+      EvaluationPeriods: '2'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: '300'
+      Statistic: Average
+      Threshold: '80'
+    Type: AWS::CloudWatch::Alarm
+
+  CPUAlarmLow:
+    Properties:
+      AlarmActions:
+        - Ref: ScaleDownPolicy
+      AlarmDescription: Scale-down if CPU < 70% for 10 minutes
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value:
+            Ref: AutoScalingGroup
+      EvaluationPeriods: '2'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: '300'
+      Statistic: Average
+      Threshold: '50'
+    Type: AWS::CloudWatch::Alarm
+
+  AutoScalingGroup:
+    Properties:
+      LaunchConfigurationName:
+        Ref: LaunchConfig
+      LoadBalancerNames:
+        - Ref: ElasticLoadBalancer
+      DesiredCapacity: '2'
+      MaxSize: '3'
+      MinSize: '1'
+      VPCZoneIdentifier:
+        Ref: Subnets
+    Type: AWS::AutoScaling::AutoScalingGroup
+
+  InstanceProfile:
+    Properties:
+      InstanceProfileName:
+        Fn::Join:
+          - "-"
+          - - IAM
+            - InstanceProfile
+      Path: "/"
+      Roles:
+        - Ref: IAMAssumeInstanceRole
+    Type: AWS::IAM::InstanceProfile
+
+  ScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName:
+        Ref: AutoScalingGroup
+      Cooldown: '60'
+      ScalingAdjustment: "-1"
+
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName:
+        Ref: AutoScalingGroup
+      Cooldown: '60'
+      ScalingAdjustment: '1'
+
+  ElasticLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      SecurityGroups:
+        - Ref: ELBSecurityGroup
+      Subnets:
+        Ref: Subnets
+      CrossZone: 'true'
+      HealthCheck:
+        HealthyThreshold: '3'
+        Interval: '30'
+        Target:
+          Fn::Join:
+            - ''
+            - - 'HTTP:'
+              - '80'
+              - "/"
+        Timeout: '5'
+        UnhealthyThreshold: '5'
+      Listeners:
+        - InstancePort: '80'
+          LoadBalancerPort: '80'
+          Protocol: HTTP
+
+
+  IAMAssumeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+        Version: '2012-10-17'
+      Path: "/"
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - ec2:DescribeTags
+                Effect: Allow
+                Resource: "*"
+              - Action:
+                  - s3:Get*
+                  - s3:List*
+                Effect: Allow
+                Resource: "*"
+              - Action: logs:*
+                Effect: Allow
+                Resource: "*"
+            Version: '2012-10-17'
+          PolicyName:
+            Fn::Join:
+              - "-"
+              - - IAM
+                - EC2
+                - Policy
+      RoleName:
+        Fn::Join:
+          - "-"
+          - - IAM
+            - EC2
+            - Role
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH public access and HTTP from the load balancer only
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: '22'
+          IpProtocol: tcp
+          ToPort: '22'
+        - FromPort: '80'
+          IpProtocol: tcp
+          SourceSecurityGroupId:
+            Fn::GetAtt:
+              - ELBSecurityGroup
+              - GroupId
+          ToPort: '80'
+      VpcId:
+        Ref: VPC
+
+  ELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable public access HTTP and HTTPS
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: '80'
+          IpProtocol: tcp
+          ToPort: '80'
+        - CidrIp: 0.0.0.0/0
+          FromPort: '443'
+          IpProtocol: tcp
+          ToPort: '443'
+      VpcId:
+        Ref: VPC
+
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable NFS access from EC2
+      SecurityGroupIngress:
+        - FromPort: '2049'
+          IpProtocol: tcp
+          ToPort: '2049'
+          SourceSecurityGroupId:
+            Fn::GetAtt:
+              - InstanceSecurityGroup
+              - GroupId
+      VpcId:
+        Ref: VPC
+
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      IamInstanceProfile:
+        Ref: InstanceProfile
+      ImageId: !Ref ImageId
+      InstanceType:
+        Ref: InstanceType
+      KeyName:
+        Ref: KeyName
+      SecurityGroups:
+        - Fn::GetAtt:
+            - InstanceSecurityGroup
+            - GroupId
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+            - ''
+            - - "#!/bin/bash -x\n"
+              - 'export LC_CTYPE=en_US.UTF-8
+
+'
+              - 'export LC_ALL=en_US.UTF-8
+
+'
+              - 'apt-get update
+
+'
+              - 'apt-get install -y curl nfs-common
+
+'
+              - EC2_REGION=
+              - Ref: AWS::Region
+              - "\n"
+              - DIR_TGT=/mnt/efs/
+              - "\n"
+              - EFS_FILE_SYSTEM_ID=
+              - Ref: EFSFileSystem
+              - "\n"
+              - 'mkdir -p $DIR_TGT
+
+'
+              - 'DIR_SRC=$EFS_FILE_SYSTEM_ID.efs.$EC2_REGION.amazonaws.com
+
+'
+              - mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2
+                $DIR_SRC:/ $DIR_TGT
+
+Outputs:
+  AutoScalingGroup:
+    Description: AutoScaling Group Name
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AutoScalingGroup"
+    Value:
+      Ref: AutoScalingGroup
+  StackName:
+    Description: Stack Name
+    Value:
+      Ref: AWS::StackName
+  URL:
+    Description: The URL of the website
+    Value:
+      Fn::Join:
+        - ''
+        - - http://
+          - Fn::GetAtt:
+              - ElasticLoadBalancer
+              - DNSName
