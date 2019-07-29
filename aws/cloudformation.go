@@ -110,8 +110,6 @@ func (cf *Cloudformation) createStack() {
 				os.Exit(1)
 			}
 
-			fmt.Printf("Key Material: %s \n", *resp.KeyMaterial)
-
 			createPemFile(resp.KeyMaterial)
 
 			file := readFile("templates/distributed_file_system.yaml")
