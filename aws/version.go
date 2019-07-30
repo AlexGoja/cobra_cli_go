@@ -1,7 +1,7 @@
 package aws
 
 import (
-	cmd2 "devops-tool/cmd"
+	cmd2 "cobra_cli_go/cmd"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/spf13/cobra"

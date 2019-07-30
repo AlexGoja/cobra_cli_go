@@ -1,8 +1,8 @@
 package main
 
 import (
-	cmd "devops-tool/cmd"
-	"devops-tool/aws"
+	cmd "cobra_cli_go/cmd"
+	"cobra_cli_go/aws"
 )
 
 func main() {
