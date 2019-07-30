@@ -23,7 +23,7 @@ Example of cobra go cli interacting with AWS API for automation tasks
 
 Go installation https://golang.org/doc/install
 
-2. Go to project root
+2. Go to project root (currently insyallation is for mac)
 
 `make install `
 
