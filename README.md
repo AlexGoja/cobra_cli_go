@@ -53,4 +53,8 @@ Bug:
 pem file created will need to have chmod modified
 chmod 400 efskeypair.pem before connecting to ec2 instance
 
+# Demo Video:
+
+[![Watch the video]()](https://youtu.be/W3Lop1HfmEA)
+
 
