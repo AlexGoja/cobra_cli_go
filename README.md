@@ -57,4 +57,6 @@ chmod 400 efskeypair.pem before connecting to ec2 instance
 
 [![Watch the video]()](https://youtu.be/v_mKxft4w-E)
 
+# Architecture
 
+![Alt text](efs_architect.png "Title")
