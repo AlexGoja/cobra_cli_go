@@ -104,9 +104,9 @@ Resources:
         Ref: LaunchConfig
       LoadBalancerNames:
         - Ref: ElasticLoadBalancer
-      DesiredCapacity: '2'
-      MaxSize: '3'
-      MinSize: '2'
+      DesiredCapacity: '3'
+      MaxSize: '5'
+      MinSize: '3'
       VPCZoneIdentifier:
         Ref: Subnets
     Type: AWS::AutoScaling::AutoScalingGroup
